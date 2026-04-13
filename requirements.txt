@@ -1,0 +1,8 @@
+pandas>=1.5
+scikit-learn>=1.2
+matplotlib>=3.6
+seaborn>=0.12
+joblib>=1.2
+streamlit>=1.28
+experta>=1.9.4
+frozendict>=1.2
