@@ -119,9 +119,10 @@ for r in es_result["rules_fired"]:
 
 
 
-#  Decision Tree Model with Feature Selection
-
-print("\n=== STEP 4: Decision Tree Model with Feature Selection ===")
+# ════════════════════════════════════════════════════════════════════════
+# STEP 4 – Decision Tree Model
+# ════════════════════════════════════════════════════════════════════════
+print("\n=== STEP 4: Decision Tree Model ===")
 
 X = df.drop(columns=["target"])
 y = df["target"]
@@ -129,28 +130,6 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# ── 4a. Feature Selection: Train preliminary model to get importances ────
-print("  [*] Step 4a: Selecting top features based on importance...")
-prelim_model = DecisionTreeClassifier(max_depth=5, random_state=42)
-prelim_model.fit(X_train, y_train)
-feature_importances = pd.Series(prelim_model.feature_importances_, 
-                                 index=X_train.columns).sort_values(ascending=False)
-
-# Select top N features (keep features with cumulative importance >= 90%)
-cumulative_importance = feature_importances.cumsum()
-n_features = (cumulative_importance <= 0.90).sum() + 1
-n_features = max(n_features, 5)  # Keep at least 5 features
-selected_features = feature_importances.head(n_features).index.tolist()
-
-print(f"  [✓] Selected {n_features} features out of {len(X.columns)}")
-print(f"      Top features: {', '.join(selected_features[:5])}")
-
-# Filter datasets to selected features only
-X_train_selected = X_train[selected_features]
-X_test_selected = X_test[selected_features]
-
-#Train final model on selected features 
-print("  [*] Step 4b: Training model on selected features...")
 param_grid = {
     "max_depth":         [3, 5, 7, None],
     "min_samples_split": [2, 5, 10],
@@ -159,11 +138,11 @@ grid = GridSearchCV(
     DecisionTreeClassifier(random_state=42),
     param_grid, cv=5, scoring="f1", n_jobs=-1,
 )
-grid.fit(X_train_selected, y_train)
+grid.fit(X_train, y_train)
 best_model = grid.best_estimator_
 print(f"  Best params : {grid.best_params_}")
 
-y_pred = best_model.predict(X_test_selected)
+y_pred = best_model.predict(X_test)
 dt_metrics = {
     "accuracy":  accuracy_score(y_test, y_pred),
     "precision": precision_score(y_test, y_pred),
@@ -177,15 +156,8 @@ print(f"  F1-Score    : {dt_metrics['f1']:.3f}")
 print("\n" + classification_report(y_test, y_pred,
                                     target_names=["No Disease","Disease"]))
 
-# Save model along with selected features list
-model_data = {
-    "model": best_model,
-    "selected_features": selected_features,
-    "feature_importances": feature_importances.to_dict()
-}
-joblib.dump(model_data, "ml_model/decision_tree_model.pkl")
+joblib.dump(best_model, "ml_model/decision_tree_model.pkl")
 print("  [✓] Model saved → ml_model/decision_tree_model.pkl")
-print(f"  [✓] Selected features saved with model")
 
 
 
@@ -215,12 +187,7 @@ report = f"""# Heart Disease Detection — Accuracy Comparison Report
 - Training set  : {len(X_train)}
 - Test set      : {len(X_test)}
 
-## Decision Tree Model (with Feature Selection)
-
-### Selected Features ({n_features} out of {len(X.columns)})
-{chr(10).join([f"- **{feat}**: {feature_importances[feat]:.4f}" for feat in selected_features])}
-
-### Performance Metrics
+## Decision Tree Model
 
 | Metric    | Score |
 |-----------|-------|
@@ -230,10 +197,6 @@ report = f"""# Heart Disease Detection — Accuracy Comparison Report
 | F1-Score  | {dt_metrics['f1']:.3f} |
 
 Best hyperparameters: `{grid.best_params_}`
-
-**Feature Selection Strategy:** Selected top {n_features} features based on preliminary Decision Tree 
-importance scores, capturing 90% of cumulative importance. This reduces model complexity 
-and potential overfitting while maintaining predictive power.
 
 ## Rule-Based Expert System
 
@@ -245,21 +208,19 @@ and potential overfitting while maintaining predictive power.
 
 ## Comparison & Analysis
 
-| Aspect          | Expert System                        | Decision Tree (Feature Selected)  |
+| Aspect          | Expert System                        | Decision Tree                     |
 |-----------------|--------------------------------------|-----------------------------------|
 | Accuracy        | {es_accuracy:.3f}                   | {dt_metrics['accuracy']:.3f}      |
-| Features used   | 10 (manually selected)               | {n_features} (data-driven)        |
 | Explainability  | High — rules are human-readable      | Medium — tree paths readable      |
 | Data required   | None (domain knowledge only)         | Labelled dataset required         |
 | Adaptability    | Manual rule updates needed           | Retrain on new data               |
 | Speed           | Very fast (rule firing)              | Very fast (tree traversal)        |
 
 ## Conclusion
-The Decision Tree with feature selection achieves higher predictive accuracy by learning statistical
-patterns from data while using only the most informative features ({n_features}/{len(X.columns)}). 
-This reduces model complexity and improves generalization. The Expert System is more transparent 
-and requires no training data, making it useful for rapid clinical screening when labelled examples 
-are scarce. A hybrid approach (flag high-risk patients with rules, confirm with ML) is recommended
+The Decision Tree achieves higher predictive accuracy by learning statistical
+patterns from data. The Expert System is more transparent and requires no training
+data, making it useful for rapid clinical screening when labelled examples are scarce.
+A hybrid approach (flag high-risk patients with rules, confirm with ML) is recommended
 for real-world deployment.
 """
 
