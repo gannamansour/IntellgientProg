@@ -86,7 +86,17 @@ with tab1:
         if not os.path.exists(MODEL_PATH):
             st.warning("Model not trained yet. Run `python ml_model/train_model.py` first.")
         else:
-            model = joblib.load(MODEL_PATH)
+            model_data = joblib.load(MODEL_PATH)
+            
+            # Handle both old format (just model) and new format (dict with model + features)
+            if isinstance(model_data, dict):
+                model = model_data["model"]
+                selected_features = model_data["selected_features"]
+                st.info(f"Using {len(selected_features)} selected features: {', '.join(selected_features[:5])}{'...' if len(selected_features) > 5 else ''}")
+            else:
+                # Backward compatibility
+                model = model_data
+                selected_features = None
 
             # Normalise the continuous inputs the same way the cleaner did
             raw_df = pd.read_csv("data/raw_data.csv")
@@ -109,6 +119,10 @@ with tab1:
                 "ca":       ca,
                 "thal":     thal,
             }
+
+            # Filter to selected features if feature selection was used
+            if selected_features:
+                patient_norm = {k: v for k, v in patient_norm.items() if k in selected_features}
 
             df_in = pd.DataFrame([patient_norm])
             pred  = model.predict(df_in)[0]

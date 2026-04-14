@@ -32,9 +32,7 @@ os.makedirs("reports", exist_ok=True)
 os.makedirs("ml_model", exist_ok=True)
 
 
-# ════════════════════════════════════════════════════════════════════════
-# STEP 1 – Data cleaning & preprocessing
-# ════════════════════════════════════════════════════════════════════════
+# Data cleaning & preprocessing
 print("\n=== STEP 1: Data Preprocessing ===")
 
 df_raw = pd.read_csv("data/raw_data.csv")
@@ -52,12 +50,12 @@ df.to_csv("data/cleaned_data.csv", index=False)
 print(f"Cleaned dataset: {df.shape[0]} rows × {df.shape[1]} columns")
 
 
-# ════════════════════════════════════════════════════════════════════════
+
 # STEP 2 – Visualisations
-# ════════════════════════════════════════════════════════════════════════
+
 print("\n=== STEP 2: Visualisations ===")
 
-# 2a. Correlation heatmap
+# Correlation heatmap
 fig, ax = plt.subplots(figsize=(10, 7))
 sns.heatmap(df.corr(), annot=True, fmt=".1f", cmap="coolwarm",
             ax=ax, linewidths=0.5)
@@ -67,7 +65,7 @@ fig.savefig("reports/correlation_heatmap.png", dpi=120)
 plt.close()
 print("  [✓] reports/correlation_heatmap.png")
 
-# 2b. Target distribution
+# Target distribution
 fig, ax = plt.subplots(figsize=(5, 3))
 df["target"].value_counts().plot.bar(ax=ax, color=["#2ecc71","#e74c3c"],
                                     edgecolor="white")
@@ -79,7 +77,7 @@ fig.savefig("reports/target_distribution.png", dpi=120)
 plt.close()
 print("  [✓] reports/target_distribution.png")
 
-# 2c. Feature importance (from a quick DT fit)
+#  Feature importance (from a quick DT fit)
 X_vis = df.drop(columns=["target"])
 y_vis = df["target"]
 dt_vis = DecisionTreeClassifier(max_depth=5, random_state=42)
@@ -95,7 +93,7 @@ fig.savefig("reports/feature_importance.png", dpi=120)
 plt.close()
 print("  [✓] reports/feature_importance.png")
 
-# 2d. Histograms for key features
+# Histograms for key features
 key_feats = ["age", "chol", "trestbps", "thalach", "oldpeak"]
 fig, axes = plt.subplots(1, 5, figsize=(18, 3))
 for ax, feat in zip(axes, key_feats):
@@ -107,9 +105,8 @@ plt.close()
 print("  [✓] reports/feature_histograms.png")
 
 
-# ════════════════════════════════════════════════════════════════════════
-# STEP 3 – Expert System demo
-# ════════════════════════════════════════════════════════════════════════
+
+#  Expert System demo
 print("\n=== STEP 3: Rule-Based Expert System (sample patient) ===")
 
 sample_patient = dict(age=65, chol=270, trestbps=155, thalach=90,
@@ -121,10 +118,10 @@ for r in es_result["rules_fired"]:
     print(f"    • {r}")
 
 
-# ════════════════════════════════════════════════════════════════════════
-# STEP 4 – Decision Tree Model
-# ════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 4: Decision Tree Model ===")
+
+#  Decision Tree Model with Feature Selection
+
+print("\n=== STEP 4: Decision Tree Model with Feature Selection ===")
 
 X = df.drop(columns=["target"])
 y = df["target"]
@@ -132,6 +129,28 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
+# ── 4a. Feature Selection: Train preliminary model to get importances ────
+print("  [*] Step 4a: Selecting top features based on importance...")
+prelim_model = DecisionTreeClassifier(max_depth=5, random_state=42)
+prelim_model.fit(X_train, y_train)
+feature_importances = pd.Series(prelim_model.feature_importances_, 
+                                 index=X_train.columns).sort_values(ascending=False)
+
+# Select top N features (keep features with cumulative importance >= 90%)
+cumulative_importance = feature_importances.cumsum()
+n_features = (cumulative_importance <= 0.90).sum() + 1
+n_features = max(n_features, 5)  # Keep at least 5 features
+selected_features = feature_importances.head(n_features).index.tolist()
+
+print(f"  [✓] Selected {n_features} features out of {len(X.columns)}")
+print(f"      Top features: {', '.join(selected_features[:5])}")
+
+# Filter datasets to selected features only
+X_train_selected = X_train[selected_features]
+X_test_selected = X_test[selected_features]
+
+#Train final model on selected features 
+print("  [*] Step 4b: Training model on selected features...")
 param_grid = {
     "max_depth":         [3, 5, 7, None],
     "min_samples_split": [2, 5, 10],
@@ -140,11 +159,11 @@ grid = GridSearchCV(
     DecisionTreeClassifier(random_state=42),
     param_grid, cv=5, scoring="f1", n_jobs=-1,
 )
-grid.fit(X_train, y_train)
+grid.fit(X_train_selected, y_train)
 best_model = grid.best_estimator_
 print(f"  Best params : {grid.best_params_}")
 
-y_pred = best_model.predict(X_test)
+y_pred = best_model.predict(X_test_selected)
 dt_metrics = {
     "accuracy":  accuracy_score(y_test, y_pred),
     "precision": precision_score(y_test, y_pred),
@@ -158,13 +177,20 @@ print(f"  F1-Score    : {dt_metrics['f1']:.3f}")
 print("\n" + classification_report(y_test, y_pred,
                                     target_names=["No Disease","Disease"]))
 
-joblib.dump(best_model, "ml_model/decision_tree_model.pkl")
+# Save model along with selected features list
+model_data = {
+    "model": best_model,
+    "selected_features": selected_features,
+    "feature_importances": feature_importances.to_dict()
+}
+joblib.dump(model_data, "ml_model/decision_tree_model.pkl")
 print("  [✓] Model saved → ml_model/decision_tree_model.pkl")
+print(f"  [✓] Selected features saved with model")
 
 
-# ════════════════════════════════════════════════════════════════════════
-# STEP 5 – Comparison Report
-# ════════════════════════════════════════════════════════════════════════
+
+# Comparison Report
+
 print("\n=== STEP 5: Writing Comparison Report ===")
 
 # Evaluate expert system on test set (un-normalised values for raw rules)
@@ -189,7 +215,12 @@ report = f"""# Heart Disease Detection — Accuracy Comparison Report
 - Training set  : {len(X_train)}
 - Test set      : {len(X_test)}
 
-## Decision Tree Model
+## Decision Tree Model (with Feature Selection)
+
+### Selected Features ({n_features} out of {len(X.columns)})
+{chr(10).join([f"- **{feat}**: {feature_importances[feat]:.4f}" for feat in selected_features])}
+
+### Performance Metrics
 
 | Metric    | Score |
 |-----------|-------|
@@ -199,6 +230,10 @@ report = f"""# Heart Disease Detection — Accuracy Comparison Report
 | F1-Score  | {dt_metrics['f1']:.3f} |
 
 Best hyperparameters: `{grid.best_params_}`
+
+**Feature Selection Strategy:** Selected top {n_features} features based on preliminary Decision Tree 
+importance scores, capturing 90% of cumulative importance. This reduces model complexity 
+and potential overfitting while maintaining predictive power.
 
 ## Rule-Based Expert System
 
@@ -210,19 +245,21 @@ Best hyperparameters: `{grid.best_params_}`
 
 ## Comparison & Analysis
 
-| Aspect          | Expert System                        | Decision Tree                     |
+| Aspect          | Expert System                        | Decision Tree (Feature Selected)  |
 |-----------------|--------------------------------------|-----------------------------------|
 | Accuracy        | {es_accuracy:.3f}                   | {dt_metrics['accuracy']:.3f}      |
+| Features used   | 10 (manually selected)               | {n_features} (data-driven)        |
 | Explainability  | High — rules are human-readable      | Medium — tree paths readable      |
 | Data required   | None (domain knowledge only)         | Labelled dataset required         |
 | Adaptability    | Manual rule updates needed           | Retrain on new data               |
 | Speed           | Very fast (rule firing)              | Very fast (tree traversal)        |
 
 ## Conclusion
-The Decision Tree achieves higher predictive accuracy by learning statistical
-patterns from data. The Expert System is more transparent and requires no training
-data, making it useful for rapid clinical screening when labelled examples are scarce.
-A hybrid approach (flag high-risk patients with rules, confirm with ML) is recommended
+The Decision Tree with feature selection achieves higher predictive accuracy by learning statistical
+patterns from data while using only the most informative features ({n_features}/{len(X.columns)}). 
+This reduces model complexity and improves generalization. The Expert System is more transparent 
+and requires no training data, making it useful for rapid clinical screening when labelled examples 
+are scarce. A hybrid approach (flag high-risk patients with rules, confirm with ML) is recommended
 for real-world deployment.
 """
 

@@ -1,0 +1,177 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    FEATURE SELECTION WORKFLOW                            ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│  STEP 1: DATA PREPARATION                                               │
+└─────────────────────────────────────────────────────────────────────────┘
+    
+    Raw Data (303 patients × 14 features)
+           ↓
+    [Clean & Normalize]
+           ↓
+    Cleaned Data → Split 80/20
+           ↓
+    ┌──────────────┬──────────────┐
+    │  Train Set   │   Test Set   │
+    │  (242 rows)  │  (61 rows)   │
+    └──────────────┴──────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│  STEP 2: FEATURE SELECTION (NEW!)                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    Train Set (13 features)
+           ↓
+    ┌─────────────────────────────────────┐
+    │  Preliminary Decision Tree          │
+    │  (max_depth=5, quick training)      │
+    └─────────────────────────────────────┘
+           ↓
+    Extract Feature Importances
+           ↓
+    ┌─────────────────────────────────────┐
+    │  Feature Importance Scores:         │
+    │  ─────────────────────────────────  │
+    │  ca       : 0.25  ████████████████  │
+    │  cp       : 0.20  ████████████      │
+    │  thal     : 0.18  ███████████       │
+    │  oldpeak  : 0.15  █████████         │
+    │  thalach  : 0.12  ███████           │ ← 90% cumulative
+    │  ─────────────────────────────────  │
+    │  age      : 0.05  ██                │
+    │  chol     : 0.03  █                 │
+    │  exang    : 0.02  █                 │
+    │  ... (8 more features)              │
+    └─────────────────────────────────────┘
+           ↓
+    Select Top N Features
+    (cumulative importance ≥ 90%)
+           ↓
+    ┌─────────────────────────────────────┐
+    │  Selected Features (5-8 features)   │
+    │  ✓ ca, cp, thal, oldpeak, thalach   │
+    └─────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│  STEP 3: FINAL MODEL TRAINING                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    Train Set → Filter to Selected Features Only
+           ↓
+    ┌─────────────────────────────────────┐
+    │  GridSearchCV                       │
+    │  - max_depth: [3, 5, 7, None]       │
+    │  - min_samples_split: [2, 5, 10]    │
+    │  - 5-fold cross-validation          │
+    └─────────────────────────────────────┘
+           ↓
+    Best Model (trained on selected features)
+           ↓
+    ┌─────────────────────────────────────┐
+    │  Save Model Package:                │
+    │  {                                  │
+    │    "model": DecisionTree(...),      │
+    │    "selected_features": [...],      │
+    │    "feature_importances": {...}     │
+    │  }                                  │
+    └─────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│  STEP 4: PREDICTION (UI or API)                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    New Patient Data (all 13 features)
+           ↓
+    Load Model Package
+           ↓
+    Extract selected_features list
+           ↓
+    Filter Patient Data → Keep Only Selected Features
+           ↓
+    ┌─────────────────────────────────────┐
+    │  Patient (filtered):                │
+    │  {                                  │
+    │    "ca": 2,                         │
+    │    "cp": 1,                         │
+    │    "thal": 3,                       │
+    │    "oldpeak": 0.52,                 │
+    │    "thalach": 0.31                  │
+    │  }                                  │
+    └─────────────────────────────────────┘
+           ↓
+    model.predict(filtered_data)
+           ↓
+    ┌─────────────────────────────────────┐
+    │  Prediction Result:                 │
+    │  - Label: "Heart Disease Detected"  │
+    │  - Confidence: 87.3%                │
+    │  - Features Used: 5                 │
+    └─────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                         KEY DIFFERENCES                                  ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────┬──────────────────────────┐
+│  BEFORE (All Features)   │  AFTER (Feature Select)  │
+├──────────────────────────┼──────────────────────────┤
+│  13 features used        │  5-8 features used       │
+│  Higher complexity       │  Lower complexity        │
+│  More overfitting risk   │  Less overfitting risk   │
+│  Slower predictions      │  Faster predictions      │
+│  All data required       │  Only key data required  │
+│  Model = classifier      │  Model = dict package    │
+└──────────────────────────┴──────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    WHY THIS APPROACH WORKS                               ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+1. PARETO PRINCIPLE (80/20 Rule)
+   → 5-8 features capture 90% of predictive power
+   → Remaining features add noise, not signal
+
+2. OCCAM'S RAZOR
+   → Simpler models generalize better
+   → Fewer features = less chance to memorize noise
+
+3. CLINICAL RELEVANCE
+   → Selected features align with medical knowledge
+   → ca (vessels), cp (chest pain), thal (blood disorder)
+   → Makes model more trustworthy to doctors
+
+4. PRACTICAL BENEFITS
+   → Fewer tests needed per patient
+   → Lower cost, faster diagnosis
+   → Easier to explain to patients
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                         USAGE EXAMPLES                                   ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+# Train with feature selection
+$ python main.py
+
+Output:
+  [✓] Selected 7 features out of 13
+      Top features: ca, cp, thal, oldpeak, thalach
+  [✓] Model saved with selected features
+
+# Use in UI
+$ streamlit run ui/app.py
+
+UI shows:
+  ℹ️ Using 7 selected features: ca, cp, thal, oldpeak, thalach...
+
+# Use in code
+from ml_model.predict import predict
+
+result = predict(patient_data)
+print(result['features_used'])  # Shows which features were used

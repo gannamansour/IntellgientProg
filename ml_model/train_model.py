@@ -18,17 +18,37 @@ MODEL_PATH = "ml_model/decision_tree_model.pkl"
 
 
 def train_and_evaluate():
-    # ── 1. Load cleaned data ─────────────────────────────────────────────
+    #  Load cleaned data 
     df     = pd.read_csv(DATA_PATH)
     X      = df.drop(columns=["target"])
     y      = df["target"]
 
-    # ── 2. Train / test split ────────────────────────────────────────────
+    # Train / test split 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # ── 3. Hyperparameter tuning (grid search) ───────────────────────────
+    #  Feature Selection 
+    print("[*] Performing feature selection...")
+    prelim_model = DecisionTreeClassifier(max_depth=5, random_state=42)
+    prelim_model.fit(X_train, y_train)
+    
+    feature_importances = pd.Series(prelim_model.feature_importances_, 
+                                     index=X_train.columns).sort_values(ascending=False)
+    
+    # Select features with cumulative importance >= 90%
+    cumulative_importance = feature_importances.cumsum()
+    n_features = (cumulative_importance <= 0.90).sum() + 1
+    n_features = max(n_features, 5)  # Keep at least 5 features
+    selected_features = feature_importances.head(n_features).index.tolist()
+    
+    print(f"[✓] Selected {n_features} features: {', '.join(selected_features)}")
+    
+    # Filter to selected features
+    X_train_selected = X_train[selected_features]
+    X_test_selected = X_test[selected_features]
+
+    # Hyperparameter tuning (grid search) 
     param_grid = {
         "max_depth":        [3, 5, 7, None],
         "min_samples_split": [2, 5, 10],
@@ -40,12 +60,12 @@ def train_and_evaluate():
         scoring="f1",
         n_jobs=-1,
     )
-    grid.fit(X_train, y_train)
+    grid.fit(X_train_selected, y_train)
     best_model = grid.best_estimator_
     print(f"[✓] Best params: {grid.best_params_}")
 
-    # ── 4. Evaluate ──────────────────────────────────────────────────────
-    y_pred = best_model.predict(X_test)
+    # Evaluate 
+    y_pred = best_model.predict(X_test_selected)
     metrics = {
         "accuracy":  accuracy_score(y_test, y_pred),
         "precision": precision_score(y_test, y_pred),
@@ -56,12 +76,18 @@ def train_and_evaluate():
     print(classification_report(y_test, y_pred,
                                  target_names=["No Disease", "Disease"]))
 
-    # ── 5. Save model ────────────────────────────────────────────────────
+    #  Save model with selected features 
     os.makedirs("ml_model", exist_ok=True)
-    joblib.dump(best_model, MODEL_PATH)
+    model_data = {
+        "model": best_model,
+        "selected_features": selected_features,
+        "feature_importances": feature_importances.to_dict()
+    }
+    joblib.dump(model_data, MODEL_PATH)
     print(f"[✓] Model saved → {MODEL_PATH}")
+    print(f"[✓] Selected features: {selected_features}")
 
-    return best_model, metrics, X.columns.tolist()
+    return best_model, metrics, selected_features
 
 
 if __name__ == "__main__":
